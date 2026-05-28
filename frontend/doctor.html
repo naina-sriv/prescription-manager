@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Doctor Dashboard – RxManager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <h2> RxManager — Doctor Dashboard</h2>
+    <button onclick="logout()">Logout</button>
+  </nav>
+
+  <div class="container">
+    <!-- Create Prescription -->
+    <div class="card">
+      <h3> New Prescription</h3>
+      <div class="form-group">
+        <label>Patient</label>
+        <select id="patient-select"><option value="">Loading patients...</option></select>
+      </div>
+      <div class="form-group">
+        <label>Diagnosis</label>
+        <input type="text" id="diagnosis" placeholder="e.g. Viral Fever">
+      </div>
+      <div class="form-group">
+        <label>Medicines (one per line)</label>
+        <textarea id="medicines" placeholder="Paracetamol 500mg – twice daily&#10;Cetirizine 10mg – at night"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Instructions</label>
+        <textarea id="instructions" placeholder="Drink plenty of fluids, rest..."></textarea>
+      </div>
+      <button class="btn" onclick="createPrescription()">Create Prescription</button>
+      <p id="create-msg" class="success"></p>
+    </div>
+
+    <!-- Search Prescriptions -->
+    <div class="search-bar">
+      <input type="text" id="search" placeholder="Search by diagnosis...">
+      <button class="btn" onclick="loadPrescriptions()">Search</button>
+    </div>
+
+    <h3 style="margin-bottom:1rem">My Prescriptions</h3>
+    <div class="rx-list" id="rx-list"><p>Loading...</p></div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+      <h3> Edit Prescription</h3>
+      <input type="hidden" id="edit-id">
+      <div class="form-group"><label>Diagnosis</label><input type="text" id="edit-diagnosis"></div>
+      <div class="form-group"><label>Medicines</label><textarea id="edit-medicines"></textarea></div>
+      <div class="form-group"><label>Instructions</label><textarea id="edit-instructions"></textarea></div>
+      <div class="modal-actions">
+        <button class="btn btn-sm" onclick="saveEdit()">Save</button>
+        <button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://localhost:8000";
+    const token = localStorage.getItem('token');
+    if (!token) window.location.href = 'index.html';
+
+    async function apiFetch(url, opts = {}) {
+      return fetch(API + url, {
+        ...opts,
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...opts.headers }
+      });
+    }
+
+    async function loadPatients() {
+      const res = await apiFetch('/patients');
+      const patients = await res.json();
+      const sel = document.getElementById('patient-select');
+      sel.innerHTML = patients.map(p => `<option value="${p.id}">${p.name} (${p.email})</option>`).join('');
+    }
+
+    async function createPrescription() {
+      const body = {
+        patient_id: parseInt(document.getElementById('patient-select').value),
+        diagnosis: document.getElementById('diagnosis').value,
+        medicines: document.getElementById('medicines').value,
+        instructions: document.getElementById('instructions').value
+      };
+      const res = await apiFetch('/prescriptions', { method: 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      const msg = document.getElementById('create-msg');
+      if (!res.ok) { msg.className = 'error'; msg.textContent = data.detail; return; }
+      msg.className = 'success'; msg.textContent = 'Prescription created!';
+      loadPrescriptions();
+    }
+
+    async function loadPrescriptions() {
+      const search = document.getElementById('search').value;
+      const res = await apiFetch(`/prescriptions?search=${encodeURIComponent(search)}`);
+      const data = await res.json();
+      const list = document.getElementById('rx-list');
+      if (!data.length) { list.innerHTML = '<p>No prescriptions found.</p>'; return; }
+      list.innerHTML = data.map(p => `
+        <div class="rx-card">
+          <h4> ${p.diagnosis}</h4>
+          <div class="rx-meta">Patient: ${p.patient_name} &nbsp;•&nbsp; ${new Date(p.created_at).toLocaleDateString()}</div>
+          <p><b>Medicines:</b> ${p.medicines.replace(/\n/g, ', ')}</p>
+          ${p.instructions ? `<p><b>Instructions:</b> ${p.instructions}</p>` : ''}
+          <div class="rx-actions">
+            <button class="btn btn-sm btn-outline" onclick="openEdit(${p.id}, '${p.diagnosis.replace(/'/g,"\\'")}', \`${p.medicines}\`, \`${p.instructions||''}\`)">✏️ Edit</button>
+            <button class="btn btn-sm" onclick="downloadPDF(${p.id})">⬇ PDF</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function downloadPDF(id) {
+      const res = await apiFetch(`/prescriptions/${id}/pdf`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `prescription_${id}.pdf`; a.click();
+    }
+
+    function openEdit(id, diagnosis, medicines, instructions) {
+      document.getElementById('edit-id').value = id;
+      document.getElementById('edit-diagnosis').value = diagnosis;
+      document.getElementById('edit-medicines').value = medicines;
+      document.getElementById('edit-instructions').value = instructions;
+      document.getElementById('edit-modal').classList.add('open');
+    }
+
+    function closeModal() { document.getElementById('edit-modal').classList.remove('open'); }
+
+    async function saveEdit() {
+      const id = document.getElementById('edit-id').value;
+      const body = {
+        diagnosis: document.getElementById('edit-diagnosis').value,
+        medicines: document.getElementById('edit-medicines').value,
+        instructions: document.getElementById('edit-instructions').value
+      };
+      await apiFetch(`/prescriptions/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      closeModal(); loadPrescriptions();
+    }
+
+    function logout() { localStorage.clear(); window.location.href = 'index.html'; }
+
+    loadPatients();
+    loadPrescriptions();
+  </script>
+</body>
+</html>
