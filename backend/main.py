@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine
-from models import Base
+from database import Base
 from routers import auth, patient, prescription
 
 Base.metadata.create_all(bind=engine)

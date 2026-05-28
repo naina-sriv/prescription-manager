@@ -6,8 +6,7 @@ from database import get_db
 from models import User, Prescription
 from schema import PrescriptionCreate, PrescriptionUpdate, PrescriptionOut
 from auth import get_current_user
-from pdf_gen import generate_prescription_pdf
-from ocr import process_prescription_image
+from pdf_generation import generate_prescription_pdf
 
 router = APIRouter(prefix="/prescriptions", tags=["Prescriptions"])
 
@@ -123,27 +122,9 @@ def save_scanned_prescription(
         doctor_id=current_user.id,
         diagnosis=data.diagnosis,
         medicines=data.medicines,
-        instructions=data.instructions or "Scanned from paper prescription"
+        instructions=data.instructions
     )
     db.add(prescription)
     db.commit()
     db.refresh(prescription)
     return {"message": "Saved", "id": prescription.id}
-
-@router.post("/ocr")
-async def ocr_prescription(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
-):
-    if file.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
-        raise HTTPException(status_code=400, detail="Only image files accepted (jpg, png, webp)")
-    
-    image_bytes = await file.read()
-    if len(image_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large, max 10MB")
-    
-    try:
-        result = process_prescription_image(image_bytes)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
